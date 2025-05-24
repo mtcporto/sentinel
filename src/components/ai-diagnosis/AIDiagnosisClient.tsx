@@ -5,9 +5,9 @@ import React, { useState, useTransition, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { handleAIDiagnostics, getSystemOverviewForAIDiagnosis } from '@/lib/actions';
+import { handleAIDiagnostics, getSystemOverviewForAIDiagnosis, executeSystemCommand } from '@/lib/actions';
 import type { AIPoweredDiagnosisOutput } from '@/ai/flows/ai-powered-diagnosis';
-import { Loader2, Brain, Activity, FileText, History as HistoryIcon, Wand2, RefreshCw } from 'lucide-react';
+import { Loader2, Brain, Activity, FileText, History as HistoryIcon, Wand2, RefreshCw, Terminal } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useActionHistory } from '@/contexts/ActionHistoryContext'; 
 
@@ -15,12 +15,14 @@ export function AIDiagnosisClient() {
   const [diagnosisResult, setDiagnosisResult] = useState<AIPoweredDiagnosisOutput | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isDiagnosing, startDiagnoseTransition] = useTransition();
-  const [isFetchingData, setIsFetchingData] = useState(false);
+  const [isFetchingData, setIsFetchingData] = useState(true); // Start true to fetch on load
+  const [isExecutingCommand, setIsExecutingCommand] = useState(false);
+
   const { toast } = useToast();
   const { addAction, actionHistory } = useActionHistory();
 
-  const [systemStatus, setSystemStatus] = useState<string>("System status not yet loaded. Click 'Refresh Data' or implement server actions.");
-  const [recentLogs, setRecentLogs] = useState<string>("Recent logs not yet loaded. Click 'Refresh Data' or implement server actions.");
+  const [systemStatus, setSystemStatus] = useState<string>("Fetching system data...");
+  const [recentLogs, setRecentLogs] = useState<string>("Fetching recent logs...");
   
   const currentActionHistory = actionHistory.map(a => `${new Date(a.timestamp).toLocaleString()}: ${a.action} (${a.status})`).join('\n') || "No actions recorded recently.";
 
@@ -33,16 +35,17 @@ export function AIDiagnosisClient() {
       setRecentLogs(overview.recentLogs);
       toast({
         title: "System Data Refreshed",
-        description: "Data for AI diagnosis has been updated from server actions.",
+        description: "Data for AI diagnosis has been updated.",
       });
     } catch (err) {
       console.error("Error fetching system data for AI diagnosis:", err);
-      setError("Could not fetch system data. Ensure server actions are implemented.");
-      setSystemStatus("Failed to load system status.");
-      setRecentLogs("Failed to load recent logs.");
+      const errorMessage = err instanceof Error ? err.message : "Could not fetch system data. Ensure server actions are implemented or stubs return data.";
+      setError(errorMessage);
+      setSystemStatus(`Failed to load system status: ${errorMessage}`);
+      setRecentLogs(`Failed to load recent logs: ${errorMessage}`);
       toast({
         title: "Data Fetch Failed",
-        description: "Could not retrieve live system data for diagnosis.",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -51,12 +54,19 @@ export function AIDiagnosisClient() {
   };
   
   useEffect(() => {
-    // Initial fetch of system data
     fetchSystemDataForDiagnosis();
   }, []);
 
 
   const handleDiagnose = () => {
+    if (systemStatus.startsWith("Fetching") || recentLogs.startsWith("Fetching") || systemStatus.startsWith("Failed") || recentLogs.startsWith("Failed")){
+       toast({
+        title: "Cannot Diagnose",
+        description: "System data is not available or failed to load. Please refresh.",
+        variant: "destructive",
+      });
+      return;
+    }
     setError(null);
     setDiagnosisResult(null);
 
@@ -74,10 +84,10 @@ export function AIDiagnosisClient() {
           description: "System diagnosis has been generated.",
         });
         addAction({
-          action: "AI System Diagnosis Performed",
+          action: "AI System Diagnosis Requested",
           user: "System",
-          status: "Executed (Simulated)",
-          details: `Diagnosis: ${result.data.diagnosis.substring(0,100)}...`
+          status: "Executed (Simulated)", // This itself is a system action
+          details: `Diagnosis based on current data.`
         });
       } else {
         setError(result.error || "Failed to perform AI diagnosis.");
@@ -90,18 +100,51 @@ export function AIDiagnosisClient() {
     });
   };
 
-  const handleExecuteAction = (actionText: string) => {
-    addAction({
-      action: actionText,
-      user: "AI Suggested",
-      status: "Executed (Simulated)",
-      details: "Action executed based on AI diagnosis."
-    });
+  const handleExecuteSuggestedAction = async (actionText: string) => {
+    setIsExecutingCommand(true);
+    setError(null);
+    
+    // Attempt to extract a command-like string. This is a heuristic.
+    // E.g., "Restart the Nginx service" -> "systemctl restart nginx" (hypothetically)
+    // For now, we pass the descriptive action text.
+    // In a real system, you'd need a more robust way to map suggestions to commands.
+    const commandToExecute = actionText; 
+
     toast({
-      title: "Action Simulated",
-      description: `"${actionText}" has been logged as executed.`,
+      title: "Executing Action...",
+      description: `Attempting to execute: "${commandToExecute}"`,
     });
+
+    const result = await executeSystemCommand(commandToExecute);
+
+    if (result.success) {
+      toast({
+        title: "Action Attempted (Simulated)",
+        description: `Command: "${commandToExecute}". Output: ${result.output || "No output."}`,
+      });
+      addAction({
+        action: `Execute: ${commandToExecute}`,
+        user: "AI Suggested/User Approved",
+        status: "Executed (Simulated)",
+        details: `Simulated execution. Output: ${result.output || "N/A"}`,
+      });
+    } else {
+      toast({
+        title: "Action Failed (Simulated)",
+        description: `Command: "${commandToExecute}". Error: ${result.error || "Unknown error."}`,
+        variant: "destructive",
+      });
+      addAction({
+        action: `Attempt Execute: ${commandToExecute}`,
+        user: "AI Suggested/User Approved",
+        status: "Failed (Simulated)",
+        details: `Simulated execution failed. Error: ${result.error || "N/A"}`,
+      });
+      setError(`Failed to execute "${commandToExecute}": ${result.error}`);
+    }
+    setIsExecutingCommand(false);
   };
+
 
   return (
     <div className="space-y-6">
@@ -112,13 +155,13 @@ export function AIDiagnosisClient() {
             AI-Powered System Diagnosis
           </CardTitle>
           <CardDescription>
-            Analyzes current system status, recent logs (fetched from server actions), and action history to provide a diagnosis and suggest remedial actions.
-            Implement server actions like `getSystemMetrics`, `getServiceStatus`, `getRecentLogs` for live data.
+            Analyzes current system status, recent logs, and action history (fetched from server actions) to provide a diagnosis and suggest remedial actions.
+            Implement server actions in `src/lib/actions.ts` to provide live data from your system.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex justify-end mb-4">
-            <Button onClick={fetchSystemDataForDiagnosis} disabled={isFetchingData || isDiagnosing}>
+            <Button onClick={fetchSystemDataForDiagnosis} disabled={isFetchingData || isDiagnosing || isExecutingCommand}>
               <RefreshCw className={`mr-2 h-4 w-4 ${isFetchingData ? 'animate-spin' : ''}`} />
               {isFetchingData ? 'Refreshing Data...' : 'Refresh System Data'}
             </Button>
@@ -132,12 +175,12 @@ export function AIDiagnosisClient() {
             <pre className="p-3 bg-muted/50 rounded-md text-xs font-mono max-h-60 overflow-y-auto whitespace-pre-wrap">{recentLogs}</pre>
           </div>
            <div>
-            <h3 className="font-semibold mb-1 flex items-center gap-2"><HistoryIcon className="h-4 w-4"/>Action History (Summary):</h3>
+            <h3 className="font-semibold mb-1 flex items-center gap-2"><HistoryIcon className="h-4 w-4"/>Action History (Summary for AI):</h3>
             <pre className="p-3 bg-muted/50 rounded-md text-xs font-mono max-h-40 overflow-y-auto whitespace-pre-wrap">{currentActionHistory}</pre>
           </div>
         </CardContent>
         <CardFooter className="flex justify-end">
-          <Button onClick={handleDiagnose} disabled={isDiagnosing || isFetchingData}>
+          <Button onClick={handleDiagnose} disabled={isDiagnosing || isFetchingData || isExecutingCommand}>
             {isDiagnosing ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -184,9 +227,11 @@ export function AIDiagnosisClient() {
                     variant="outline" 
                     size="sm" 
                     className="mt-2 mr-2"
-                    onClick={() => handleExecuteAction(action.trim().replace(/^- /, ''))}
+                    onClick={() => handleExecuteSuggestedAction(action.trim().replace(/^- /, ''))}
+                    disabled={isExecutingCommand || isDiagnosing || isFetchingData}
                   >
-                    Simulate: {action.trim().replace(/^- /, '')}
+                    {isExecutingCommand ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Terminal className="mr-2 h-4 w-4" />}
+                    Execute: {action.trim().replace(/^- /, '')}
                   </Button>
                 )
               )}
