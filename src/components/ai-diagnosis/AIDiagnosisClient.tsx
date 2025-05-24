@@ -1,35 +1,66 @@
 // src/components/ai-diagnosis/AIDiagnosisClient.tsx
 "use client";
 
-import React, { useState, useTransition } from 'react';
+import React, { useState, useTransition, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { handleAIDiagnostics } from '@/lib/actions';
+import { handleAIDiagnostics, getSystemOverviewForAIDiagnosis } from '@/lib/actions';
 import type { AIPoweredDiagnosisOutput } from '@/ai/flows/ai-powered-diagnosis';
-import { MOCK_SYSTEM_STATUS_FOR_AI, MOCK_RECENT_LOGS_FOR_AI } from '@/lib/consts';
-import { Loader2, Brain, Activity, FileText, History as HistoryIcon, Wand2 } from 'lucide-react';
+import { Loader2, Brain, Activity, FileText, History as HistoryIcon, Wand2, RefreshCw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useActionHistory } from '@/contexts/ActionHistoryContext'; 
 
 export function AIDiagnosisClient() {
   const [diagnosisResult, setDiagnosisResult] = useState<AIPoweredDiagnosisOutput | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const [isDiagnosing, startDiagnoseTransition] = useTransition();
+  const [isFetchingData, setIsFetchingData] = useState(false);
   const { toast } = useToast();
   const { addAction, actionHistory } = useActionHistory();
 
-  // Mock data - in a real app, this would be fetched or dynamically provided
-  const systemStatus = MOCK_SYSTEM_STATUS_FOR_AI;
-  const recentLogs = MOCK_RECENT_LOGS_FOR_AI;
-  const currentActionHistory = actionHistory.map(a => `${a.timestamp}: ${a.action} (${a.status})`).join('\n') || "No actions recorded recently.";
+  const [systemStatus, setSystemStatus] = useState<string>("System status not yet loaded. Click 'Refresh Data' or implement server actions.");
+  const [recentLogs, setRecentLogs] = useState<string>("Recent logs not yet loaded. Click 'Refresh Data' or implement server actions.");
+  
+  const currentActionHistory = actionHistory.map(a => `${new Date(a.timestamp).toLocaleString()}: ${a.action} (${a.status})`).join('\n') || "No actions recorded recently.";
+
+  const fetchSystemDataForDiagnosis = async () => {
+    setIsFetchingData(true);
+    setError(null);
+    try {
+      const overview = await getSystemOverviewForAIDiagnosis();
+      setSystemStatus(overview.systemStatus);
+      setRecentLogs(overview.recentLogs);
+      toast({
+        title: "System Data Refreshed",
+        description: "Data for AI diagnosis has been updated from server actions.",
+      });
+    } catch (err) {
+      console.error("Error fetching system data for AI diagnosis:", err);
+      setError("Could not fetch system data. Ensure server actions are implemented.");
+      setSystemStatus("Failed to load system status.");
+      setRecentLogs("Failed to load recent logs.");
+      toast({
+        title: "Data Fetch Failed",
+        description: "Could not retrieve live system data for diagnosis.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsFetchingData(false);
+    }
+  };
+  
+  useEffect(() => {
+    // Initial fetch of system data
+    fetchSystemDataForDiagnosis();
+  }, []);
 
 
   const handleDiagnose = () => {
     setError(null);
     setDiagnosisResult(null);
 
-    startTransition(async () => {
+    startDiagnoseTransition(async () => {
       const input = {
         systemStatus,
         recentLogs,
@@ -41,6 +72,12 @@ export function AIDiagnosisClient() {
         toast({
           title: "AI Diagnosis Complete",
           description: "System diagnosis has been generated.",
+        });
+        addAction({
+          action: "AI System Diagnosis Performed",
+          user: "System",
+          status: "Executed (Simulated)",
+          details: `Diagnosis: ${result.data.diagnosis.substring(0,100)}...`
         });
       } else {
         setError(result.error || "Failed to perform AI diagnosis.");
@@ -54,7 +91,6 @@ export function AIDiagnosisClient() {
   };
 
   const handleExecuteAction = (actionText: string) => {
-    // Simulate action execution
     addAction({
       action: actionText,
       user: "AI Suggested",
@@ -76,17 +112,24 @@ export function AIDiagnosisClient() {
             AI-Powered System Diagnosis
           </CardTitle>
           <CardDescription>
-            Click the button below to let our AI analyze the current (mocked) system status, recent logs, and action history to provide a diagnosis and suggest remedial actions.
+            Analyzes current system status, recent logs (fetched from server actions), and action history to provide a diagnosis and suggest remedial actions.
+            Implement server actions like `getSystemMetrics`, `getServiceStatus`, `getRecentLogs` for live data.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div>
-            <h3 className="font-semibold mb-1 flex items-center gap-2"><Activity className="h-4 w-4"/>Current System Status (Mocked):</h3>
-            <pre className="p-3 bg-muted/50 rounded-md text-xs font-mono whitespace-pre-wrap">{systemStatus}</pre>
+          <div className="flex justify-end mb-4">
+            <Button onClick={fetchSystemDataForDiagnosis} disabled={isFetchingData || isDiagnosing}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${isFetchingData ? 'animate-spin' : ''}`} />
+              {isFetchingData ? 'Refreshing Data...' : 'Refresh System Data'}
+            </Button>
           </div>
           <div>
-            <h3 className="font-semibold mb-1 flex items-center gap-2"><FileText className="h-4 w-4"/>Recent Logs (Mocked):</h3>
-            <pre className="p-3 bg-muted/50 rounded-md text-xs font-mono max-h-40 overflow-y-auto whitespace-pre-wrap">{recentLogs}</pre>
+            <h3 className="font-semibold mb-1 flex items-center gap-2"><Activity className="h-4 w-4"/>Current System Status:</h3>
+            <pre className="p-3 bg-muted/50 rounded-md text-xs font-mono whitespace-pre-wrap max-h-60 overflow-y-auto">{systemStatus}</pre>
+          </div>
+          <div>
+            <h3 className="font-semibold mb-1 flex items-center gap-2"><FileText className="h-4 w-4"/>Recent Logs:</h3>
+            <pre className="p-3 bg-muted/50 rounded-md text-xs font-mono max-h-60 overflow-y-auto whitespace-pre-wrap">{recentLogs}</pre>
           </div>
            <div>
             <h3 className="font-semibold mb-1 flex items-center gap-2"><HistoryIcon className="h-4 w-4"/>Action History (Summary):</h3>
@@ -94,8 +137,8 @@ export function AIDiagnosisClient() {
           </div>
         </CardContent>
         <CardFooter className="flex justify-end">
-          <Button onClick={handleDiagnose} disabled={isPending}>
-            {isPending ? (
+          <Button onClick={handleDiagnose} disabled={isDiagnosing || isFetchingData}>
+            {isDiagnosing ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Diagnosing...
@@ -141,7 +184,7 @@ export function AIDiagnosisClient() {
                     variant="outline" 
                     size="sm" 
                     className="mt-2 mr-2"
-                    onClick={() => handleExecuteAction(action.trim().replace(/^- /, ''))} // Remove markdown list prefix
+                    onClick={() => handleExecuteAction(action.trim().replace(/^- /, ''))}
                   >
                     Simulate: {action.trim().replace(/^- /, '')}
                   </Button>

@@ -1,11 +1,11 @@
 // src/components/dashboard/AlertsWidget.tsx
 "use client";
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
-import { AlertTriangle, Info, XCircle, LucideIcon } from 'lucide-react';
+import { AlertTriangle, Info, XCircle, LucideIcon, Loader2 } from 'lucide-react';
 import type { SystemAlert } from '@/types';
-import { MOCK_ALERTS } from '@/lib/consts';
+import { getSystemAlerts } from '@/lib/actions';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -35,22 +35,93 @@ const getAlertColorClass = (severity: SystemAlert['severity']): string => {
   }
 };
 
+interface DisplayAlert extends SystemAlert {
+  formattedTimestamp: string;
+}
+
 export function AlertsWidget() {
-  // In a real app, alerts would be dynamic. Here we use mock data.
-  const alerts = MOCK_ALERTS;
+  const [alerts, setAlerts] = useState<SystemAlert[]>([]);
+  const [displayAlerts, setDisplayAlerts] = useState<DisplayAlert[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function fetchAlerts() {
+      try {
+        setIsLoading(true);
+        setError(null);
+        const fetchedAlerts = await getSystemAlerts();
+        setAlerts(fetchedAlerts);
+      } catch (err) {
+        console.error("Failed to fetch system alerts:", err);
+        setError("Could not load system alerts.");
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    fetchAlerts();
+  }, []);
+
+  useEffect(() => {
+    // Format timestamps on the client-side to avoid hydration mismatch
+    if (alerts.length > 0) {
+      setDisplayAlerts(
+        alerts.map(alert => ({
+          ...alert,
+          formattedTimestamp: formatDistanceToNow(new Date(alert.timestamp), { addSuffix: true })
+        }))
+      );
+    } else {
+      setDisplayAlerts([]);
+    }
+  }, [alerts]);
+
+  if (isLoading) {
+    return (
+      <Card className="shadow-lg">
+        <CardHeader>
+          <CardTitle className="text-xl">System Alerts</CardTitle>
+          <CardDescription>Important notifications and warnings.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex items-center justify-center h-32">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="ml-2">Loading alerts...</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card className="shadow-lg">
+        <CardHeader>
+          <CardTitle className="text-xl">System Alerts</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-destructive">{error}</p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card className="shadow-lg">
       <CardHeader>
         <CardTitle className="text-xl">System Alerts</CardTitle>
-        <CardDescription>Important notifications and warnings.</CardDescription>
+        <CardDescription>
+          Important notifications and warnings.
+           {displayAlerts.length === 0 && !isLoading && " (No data available - implement server action)"}
+        </CardDescription>
       </CardHeader>
       <CardContent>
-        {alerts.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-4">No active alerts. System is stable.</p>
+        {displayAlerts.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-4">
+            No active alerts. System appears stable.
+            {!isLoading && " (Implement `getSystemAlerts` server action for live data)"}
+          </p>
         ) : (
           <ul className="space-y-3">
-            {alerts.map((alert) => {
+            {displayAlerts.map((alert) => {
               const IconComponent = getAlertIcon(alert.severity);
               return (
                 <li 
@@ -61,7 +132,7 @@ export function AlertsWidget() {
                   <div>
                     <p className="font-medium text-sm">{alert.message}</p>
                     <p className="text-xs text-muted-foreground">
-                      {formatDistanceToNow(new Date(alert.timestamp), { addSuffix: true })}
+                      {alert.formattedTimestamp}
                     </p>
                   </div>
                 </li>

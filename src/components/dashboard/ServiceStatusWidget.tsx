@@ -5,13 +5,13 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import type { ServiceStatus } from '@/types';
-import { MOCK_SERVICE_STATUS } from '@/lib/consts';
-import { ShieldCheck, ShieldAlert, ShieldX, ServerCog } from 'lucide-react';
+import { getServiceStatus } from '@/lib/actions';
+import { ShieldCheck, ShieldAlert, ShieldX, ServerCog, Loader2 } from 'lucide-react';
 
 const getStatusBadgeVariant = (status: ServiceStatus['status']): "default" | "secondary" | "destructive" | "outline" => {
   switch (status) {
     case 'Running':
-      return 'default'; // Default often is primary, good for "Running"
+      return 'default';
     case 'Stopped':
       return 'secondary';
     case 'Error':
@@ -38,26 +38,72 @@ const getStatusIcon = (status: ServiceStatus['status']): React.ReactNode => {
   }
 }
 
-
 export function ServiceStatusWidget() {
-  const [services, setServices] = useState<ServiceStatus[]>(MOCK_SERVICE_STATUS);
+  const [services, setServices] = useState<ServiceStatus[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Optional: Add logic to randomly change service status for demo
   useEffect(() => {
-    const interval = setInterval(() => {
-      setServices(prevServices =>
-        prevServices.map(service => {
-          if (Math.random() < 0.1) { // 10% chance to change status
-            const statuses: ServiceStatus['status'][] = ['Running', 'Stopped', 'Error'];
-            return { ...service, status: statuses[Math.floor(Math.random() * statuses.length)] };
-          }
-          return service;
-        })
-      );
-    }, 5000);
-    return () => clearInterval(interval);
+    async function fetchServices() {
+      try {
+        setIsLoading(true);
+        setError(null);
+        const fetchedServices = await getServiceStatus();
+        setServices(fetchedServices);
+      } catch (err) {
+        console.error("Failed to fetch service status:", err);
+        setError("Could not load service statuses.");
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    fetchServices();
+    // TODO: Consider adding a refresh interval if real-time updates are desired
+    // const interval = setInterval(fetchServices, 10000); // e.g., every 10 seconds
+    // return () => clearInterval(interval);
   }, []);
 
+  if (isLoading) {
+    return (
+      <Card className="shadow-lg">
+        <CardHeader>
+          <CardTitle className="text-xl">Service Status</CardTitle>
+          <CardDescription>Current status of critical system services.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex items-center justify-center h-40">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="ml-2">Loading service statuses...</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card className="shadow-lg">
+        <CardHeader>
+          <CardTitle className="text-xl">Service Status</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-destructive">{error}</p>
+        </CardContent>
+      </Card>
+    );
+  }
+  
+  if (services.length === 0) {
+     return (
+      <Card className="shadow-lg">
+        <CardHeader>
+          <CardTitle className="text-xl">Service Status</CardTitle>
+          <CardDescription>Current status of critical system services. (No data available - implement server action)</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-muted-foreground">No service status data available. Please implement the `getServiceStatus` server action.</p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card className="shadow-lg">
