@@ -50,7 +50,10 @@ export function RecentLogsWidget() {
       }
     }
     fetchLogs();
-    // TODO: Consider adding a refresh mechanism if real-time updates are desired
+    
+    // Add refresh interval for real-time updates
+    const interval = setInterval(fetchLogs, 20000); // refresh every 20 seconds
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {

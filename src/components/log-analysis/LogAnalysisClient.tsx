@@ -31,17 +31,67 @@ export function LogAnalysisClient() {
   const [isAnalyzing, startTransition] = useTransition();
   const { toast } = useToast();
 
+  const [availableLogFiles, setAvailableLogFiles] = useState<{path: string, name: string}[]>([]);
+  const [selectedLogFile, setSelectedLogFile] = useState<string | null>(null);
+  
+  const fetchAvailableLogs = async () => {
+    try {
+      const response = await fetch('/api/logs');
+      const data = await response.json();
+      if (data.logs && Array.isArray(data.logs)) {
+        setAvailableLogFiles(data.logs);
+        // Select first log by default if available
+        if (data.logs.length > 0 && !selectedLogFile) {
+          setSelectedLogFile(data.logs[0].path);
+        }
+      }
+    } catch (err) {
+      console.error("Error fetching available logs:", err);
+      toast({ 
+        title: "Error", 
+        description: "Could not fetch list of log files", 
+        variant: "destructive" 
+      });
+    }
+  };
+  
   const fetchLogsForAnalysis = async () => {
     setIsFetchingLogs(true);
     setError(null);
     setAnalysisResult(null); 
     try {
-      const logs = await getRecentLogs(50); // Fetch more logs for analysis
-      setFetchedLogs(logs);
-      if (logs.length === 0) {
+      // First try to use our API endpoint if a log file is selected
+      if (selectedLogFile) {
+        const response = await fetch(`/api/logs?file=${encodeURIComponent(selectedLogFile)}&limit=100`);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch log: ${response.status}`);
+        }
+        const data = await response.json();
+        
+        // Convert to LogEntry format
+        const logs: LogEntry[] = data.content.map((line: string, index: number) => {
+          const level = line.includes('error') ? 'ERROR' : 
+                       line.includes('warn') ? 'WARN' : 
+                       line.includes('debug') ? 'DEBUG' : 'INFO';
+          return {
+            id: `log-${Date.now()}-${index}`,
+            timestamp: new Date().toISOString(),
+            level,
+            message: line
+          };
+        });
+        
+        setFetchedLogs(logs);
+      } else {
+        // Fallback to using the server action
+        const logs = await getRecentLogs(100);
+        setFetchedLogs(logs);
+      }
+      
+      if (fetchedLogs.length === 0) {
         toast({
           title: "No Logs Fetched",
-          description: "The server action returned no logs. Implement `getRecentLogs` to provide data.",
+          description: "No log entries were found.",
           variant: "default"
         });
       }
@@ -55,8 +105,14 @@ export function LogAnalysisClient() {
   };
 
   useEffect(() => {
-    fetchLogsForAnalysis();
+    fetchAvailableLogs();
   }, []);
+  
+  useEffect(() => {
+    if (selectedLogFile) {
+      fetchLogsForAnalysis();
+    }
+  }, [selectedLogFile]);
 
   const handleAnalyzeFetchedLogs = async () => {
     setError(null);
@@ -104,14 +160,34 @@ export function LogAnalysisClient() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="mb-4">
+          <div className="mb-4 flex flex-wrap items-center gap-4">
+            {availableLogFiles.length > 0 && (
+              <div className="flex-1">
+                <label className="block text-sm font-medium mb-1">Select Log File:</label>
+                <select 
+                  className="w-full p-2 rounded-md border bg-background" 
+                  value={selectedLogFile || ''}
+                  onChange={(e) => setSelectedLogFile(e.target.value)}
+                  disabled={isFetchingLogs || isAnalyzing}
+                >
+                  {availableLogFiles.map((log, index) => (
+                    <option key={index} value={log.path}>
+                      {log.name} ({log.path})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            
             <Button onClick={fetchLogsForAnalysis} disabled={isFetchingLogs || isAnalyzing}>
               <RefreshCw className={`mr-2 h-4 w-4 ${isFetchingLogs ? 'animate-spin' : ''}`} />
-              {isFetchingLogs ? 'Fetching Logs...' : 'Refresh Logs for Analysis'}
+              {isFetchingLogs ? 'Fetching...' : 'Refresh Logs'}
             </Button>
           </div>
 
-          <h3 className="font-semibold mb-2 text-lg">Fetched Logs for Analysis:</h3>
+          <h3 className="font-semibold mb-2 text-lg">
+            {selectedLogFile ? `Log file: ${selectedLogFile}` : 'System Logs'}:
+          </h3>
           <ScrollArea className="h-72 w-full rounded-md border p-3 bg-background font-mono text-sm">
             {isFetchingLogs && <p className="text-muted-foreground">Fetching logs...</p>}
             {!isFetchingLogs && fetchedLogs.length === 0 && (

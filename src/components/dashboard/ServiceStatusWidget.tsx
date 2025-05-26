@@ -1,69 +1,38 @@
 // src/components/dashboard/ServiceStatusWidget.tsx
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { memo } from 'react';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import type { ServiceStatus } from '@/types';
-import { getServiceStatus } from '@/lib/actions';
-import { ShieldCheck, ShieldAlert, ShieldX, ServerCog, Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { ServiceItem } from './ServiceItem';
+import { useRealTimeServices } from '@/hooks/use-real-time-services';
+import { RefreshCw, Loader2, Activity, AlertCircle } from 'lucide-react';
 
-const getStatusBadgeVariant = (status: ServiceStatus['status']): "default" | "secondary" | "destructive" | "outline" => {
-  switch (status) {
-    case 'Running':
-      return 'default';
-    case 'Stopped':
-      return 'secondary';
-    case 'Error':
-      return 'destructive';
-    case 'Pending':
-      return 'outline';
-    default:
-      return 'outline';
-  }
-};
+export const ServiceStatusWidget = memo(() => {
+  const { 
+    services, 
+    isLoading, 
+    error, 
+    lastUpdate, 
+    updates, 
+    refresh, 
+    clearUpdates 
+  } = useRealTimeServices({
+    refreshInterval: 10000, // 10 seconds
+    enableAutoRefresh: true
+  });
 
-const getStatusIcon = (status: ServiceStatus['status']): React.ReactNode => {
-  switch (status) {
-    case 'Running':
-      return <ShieldCheck className="h-4 w-4 text-green-500" />;
-    case 'Stopped':
-      return <ShieldX className="h-4 w-4 text-yellow-500" />;
-    case 'Error':
-      return <ShieldAlert className="h-4 w-4 text-red-500" />;
-    case 'Pending':
-      return <ServerCog className="h-4 w-4 text-blue-500 animate-spin" />;
-    default:
-      return <ServerCog className="h-4 w-4" />;
-  }
-}
+  const handleRefresh = async () => {
+    await refresh();
+    setTimeout(clearUpdates, 3000); // Clear visual indicators after 3 seconds
+  };
 
-export function ServiceStatusWidget() {
-  const [services, setServices] = useState<ServiceStatus[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const runningServices = services.filter(s => s.status === 'Running').length;
+  const totalServices = services.length;
+  const hasIssues = services.some(s => s.status === 'Error');
+  const hasRecentUpdates = updates.length > 0;
 
-  useEffect(() => {
-    async function fetchServices() {
-      try {
-        setIsLoading(true);
-        setError(null);
-        const fetchedServices = await getServiceStatus();
-        setServices(fetchedServices);
-      } catch (err) {
-        console.error("Failed to fetch service status:", err);
-        setError("Could not load service statuses.");
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    fetchServices();
-    // TODO: Consider adding a refresh interval if real-time updates are desired
-    // const interval = setInterval(fetchServices, 10000); // e.g., every 10 seconds
-    // return () => clearInterval(interval);
-  }, []);
-
-  if (isLoading) {
+  if (isLoading && services.length === 0) {
     return (
       <Card className="shadow-lg">
         <CardHeader>
@@ -78,13 +47,14 @@ export function ServiceStatusWidget() {
     );
   }
 
-  if (error) {
+  if (error && services.length === 0) {
     return (
       <Card className="shadow-lg">
         <CardHeader>
           <CardTitle className="text-xl">Service Status</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex items-center justify-center h-40">
+          <AlertCircle className="h-8 w-8 text-destructive mr-2" />
           <p className="text-destructive">{error}</p>
         </CardContent>
       </Card>
@@ -92,13 +62,13 @@ export function ServiceStatusWidget() {
   }
   
   if (services.length === 0) {
-     return (
+    return (
       <Card className="shadow-lg">
         <CardHeader>
           <CardTitle className="text-xl">Service Status</CardTitle>
-          <CardDescription>Current status of critical system services. (No data available - implement server action)</CardDescription>
+          <CardDescription>Current status of critical system services.</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex items-center justify-center h-40">
           <p className="text-muted-foreground">No service status data available. Please implement the `getServiceStatus` server action.</p>
         </CardContent>
       </Card>
@@ -108,27 +78,48 @@ export function ServiceStatusWidget() {
   return (
     <Card className="shadow-lg">
       <CardHeader>
-        <CardTitle className="text-xl">Service Status</CardTitle>
-        <CardDescription>Current status of critical system services.</CardDescription>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="text-xl flex items-center gap-2">
+              Service Status
+              {hasRecentUpdates && (
+                <Activity className="h-4 w-4 text-primary animate-pulse" />
+              )}
+            </CardTitle>
+            <CardDescription>
+              {runningServices}/{totalServices} services running
+              {hasIssues && " • Issues detected"}
+              {lastUpdate && (
+                <span className="ml-2 text-xs">
+                  • Updated {lastUpdate.toLocaleTimeString()}
+                </span>
+              )}
+            </CardDescription>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={isLoading}
+            className="h-8 w-8 p-0"
+          >
+            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         <ul className="space-y-3">
           {services.map((service) => (
-            <li key={service.id} className="flex items-center justify-between p-3 bg-card-foreground/5 rounded-md">
-              <div>
-                <div className="flex items-center gap-2">
-                  {getStatusIcon(service.status)}
-                  <span className="font-medium">{service.name}</span>
-                </div>
-                {service.details && <p className="text-xs text-muted-foreground mt-1">{service.details}</p>}
-              </div>
-              <Badge variant={getStatusBadgeVariant(service.status)} className="capitalize text-xs">
-                {service.status}
-              </Badge>
-            </li>
+            <ServiceItem
+              key={service.id}
+              service={service}
+              updates={updates}
+            />
           ))}
         </ul>
       </CardContent>
     </Card>
   );
-}
+});
+
+ServiceStatusWidget.displayName = 'ServiceStatusWidget';
