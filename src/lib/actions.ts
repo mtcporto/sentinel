@@ -12,6 +12,7 @@ import {
   DEFAULT_ALERTS
 } from './consts';
 import { exec } from 'child_process';
+import { readSystemLog, validateLogLimit } from '@/lib/system-logs';
 
 // --- Server Actions for fetching system data ---
 // IMPORTANT: These are stubs. Implement actual system data retrieval here.
@@ -22,8 +23,8 @@ export async function getSystemMetrics(): Promise<SystemMetric[]> {
     if (typeof window === 'undefined') {
       // Estamos no servidor, então vamos importar e usar diretamente o código da API
       try {
-        // Importa diretamente a função runCommand de system/route.ts
-        const { runCommand } = await import('@/app/api/system/route');
+        // Compartilha o executor interno de comandos do servidor
+        const { runCommand } = await import('@/lib/system-command');
         
         // Executa comandos mais robustos para coletar métricas do sistema
         const cpuInfo = await runCommand('grep "cpu " /proc/stat | awk \'{usage=($2+$4)*100/($2+$4+$5)} END {print usage}\'');
@@ -115,8 +116,8 @@ export async function getServiceStatus(): Promise<ServiceStatus[]> {
     if (typeof window === 'undefined') {
       // Estamos no servidor, então vamos importar e usar diretamente o código da API
       try {
-        // Importa diretamente a função runCommand de system/route.ts
-        const { runCommand } = await import('@/app/api/system/route');
+        // Compartilha o executor interno de comandos do servidor
+        const { runCommand } = await import('@/lib/system-command');
         
         // Get service statuses
         const services = ['apache2', 'mysql', 'nginx']; // Add or remove services as needed
@@ -175,15 +176,13 @@ export async function getServiceStatus(): Promise<ServiceStatus[]> {
 }
 
 export async function getRecentLogs(limit: number = 20): Promise<LogEntry[]> {
+  validateLogLimit(limit);
   try {
     if (typeof window === 'undefined') {
       // Estamos no servidor, então vamos importar e usar diretamente o código da API
       try {
-        // Importa diretamente a função runCommand de system/route.ts
-        const { runCommand } = await import('@/app/api/system/route');
-        
-        // Get recent logs
-        const recentLogsOutput = await runCommand(`tail -n ${limit} /var/log/syslog 2>/dev/null || echo "Não foi possível acessar o arquivo. Permissão negada."`);
+        // Read only an approved log file without invoking a shell.
+        const recentLogsOutput = await readSystemLog('/var/log/syslog', limit);
         const recentLogLines = recentLogsOutput.split('\n').filter(Boolean);
         
         // Parse log entries and attempt to determine log level
