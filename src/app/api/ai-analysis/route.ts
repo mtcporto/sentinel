@@ -1,16 +1,9 @@
 import { NextResponse } from 'next/server';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { genkit } from 'genkit';
-import { googleAI } from '@genkit-ai/googleai';
+import { generateGemini } from '@/ai/gemini';
 
 const execPromise = promisify(exec);
-
-// Set up Genkit with Google AI
-const ai = genkit({
-  plugins: [googleAI()],
-  model: 'googleai/gemini-1.5-pro',
-});
 
 export async function GET() {
   try {
@@ -93,12 +86,9 @@ export async function GET() {
       Format your response as JSON with these keys: issues, causes, recommendations, severity, explanation
     `;
     
-    // Send the prompt to the AI model (using Google's Gemini model via Genkit)
-    const result = await ai.generate({
-      prompt: prompt,
-    });
-    const text = result.text;
-    
+    const parts = await generateGemini([{ text: prompt }], { generationConfig: { responseMimeType: 'application/json' } });
+    const text = parts.map(part => part.text || '').join('');
+
     // Try to parse the AI response as JSON
     let analysisResult;
     try {
