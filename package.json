@@ -9,7 +9,7 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test:security": "node --experimental-strip-types --test tests/system-logs.test.mjs",
-    "test:ai": "node --experimental-strip-types --test tests/gemini.test.mjs"
+    "test:ai": "node --experimental-strip-types --test tests/copilot.test.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^4.1.3",
